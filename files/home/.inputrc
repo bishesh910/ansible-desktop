@@ -1,0 +1,5 @@
+$include /etc/inputrc
+# Ctrl+Backspace (sent by Option+Backspace via keyd) deletes the previous word
+"\C-h": backward-kill-word
+# Option+Delete (Ctrl+Delete in VTE) deletes the word to the right
+"\e[3;5~": kill-word

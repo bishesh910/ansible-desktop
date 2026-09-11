@@ -1,0 +1,95 @@
+---
+# The desktop user whose home gets customised. Defaults to whoever runs the playbook.
+desktop_user: "{{ lookup('env', 'USER') }}"
+desktop_home: "/home/{{ desktop_user }}"
+
+# GNOME Shell major version used when downloading extensions. Leave empty to auto-detect
+# from `gnome-shell --version` (48 on Debian 13, 46 on Ubuntu 24.04, 42 on Ubuntu 22.04...).
+gnome_shell_version: ""
+
+# --- what to install (apt) ---------------------------------------------------
+# Packages a release does not ship are skipped with a note, not an error.
+apt_packages:
+  - keyd                            # Mac-style modifier remapping (built from source if not packaged)
+  - gnome-shell-extension-appindicator
+  - papirus-icon-theme
+  - flatpak
+  - gnome-terminal
+  - tilix                           # default terminal: tabs can be renamed and the name sticks
+  - xdg-terminal-exec               # newer GNOME picks the default terminal from ~/.config/xdg-terminals.list
+  - dconf-cli
+  - curl
+  - git
+  - unzip
+  - xz-utils
+  - tmux
+  - htop
+  - fonts-noto-core                 # Devanagari coverage
+  - remmina
+  - sassc                           # } needed by the WhiteSur theme build
+  - libglib2.0-dev-bin              # }
+  - libxml2-utils                   # }
+
+keyd_source_version: v2.5.0         # only used when keyd is not in the distro's repos
+
+install_vscode: true
+install_chrome: true
+install_sublime_text: true
+
+# Corporate/VPN tooling that was also on the machine but is not "customisation".
+# Set to true only if you want them; each needs its own vendor repo which you must add yourself.
+# jcagent, netbird, netbird-ui, tailscale, teleport
+
+flatpak_user_apps:
+  - com.bitwarden.desktop
+
+telegram_version: "7.2.7"           # official tdesktop tarball, self-updates afterwards
+starship_install: true
+
+# GNOME Shell extensions from extensions.gnome.org (uuid -> shown in Extensions app)
+gnome_extensions:
+  - dash-to-dock@micxgx.gmail.com
+  - search-light@icedman.github.com
+  - clipboard-indicator@tudmotu.com
+  - caffeine@patapon.info
+  - user-theme@gnome-shell-extensions.gcampax.github.com
+gnome_extensions_enabled:
+  - ubuntu-appindicators@ubuntu.com   # from the apt package above (Ubuntu ships it already)
+  - search-light@icedman.github.com
+  - clipboard-indicator@tudmotu.com
+  - caffeine@patapon.info
+  - user-theme@gnome-shell-extensions.gcampax.github.com
+  - dash-to-dock@micxgx.gmail.com
+# Extra extensions to keep enabled per distribution. Ubuntu's own dock is replaced by Dash to Dock
+# (same settings schema), but its desktop icons and tiling assistant stay.
+gnome_extensions_enabled_extra:
+  Ubuntu:
+    - ding@rastersoft.com
+    - tiling-assistant@ubuntu.com
+# NEVER add dash2dock-lite@icedman.github.com: it crashed GNOME Shell whenever an app quit.
+
+# Themes (built from upstream git, installed into the user's home)
+whitesur_theme: true                # ~/.themes/WhiteSur-Dark, used by the user-theme extension
+tela_icons: true                    # ~/.local/share/icons/Tela-{blue,purple}[-dark|-light]
+tela_colors: [blue, purple]
+
+# dconf settings to load: path -> file under files/dconf/
+dconf_loads:
+  /org/gnome/desktop/wm/preferences/: wm-preferences.ini
+  /org/gnome/desktop/wm/keybindings/: wm-keybindings.ini
+  /org/gnome/desktop/interface/: interface.ini
+  /org/gnome/desktop/input-sources/: input-sources.ini
+  /org/gnome/desktop/peripherals/: peripherals.ini
+  /org/gnome/desktop/session/: session.ini
+  /org/gnome/desktop/screensaver/: screensaver.ini
+  /org/gnome/desktop/default-applications/terminal/: default-terminal.ini   # older GNOME (Ubuntu 22.04/24.04)
+  /org/gnome/settings-daemon/plugins/media-keys/: media-keys.ini
+  /org/gnome/settings-daemon/plugins/color/: color.ini
+  /org/gnome/shell/keybindings/: shell-keybindings.ini
+  /org/gnome/terminal/legacy/: terminal.ini
+  /com/gexperts/Tilix/: tilix.ini
+  /org/gnome/shell/extensions/dash-to-dock/: ext-dash-to-dock.ini
+  /org/gnome/shell/extensions/search-light/: ext-search-light.ini
+  /org/gnome/shell/extensions/clipboard-indicator/: ext-clipboard-indicator.ini
+  /org/gnome/shell/extensions/caffeine/: ext-caffeine.ini
+  /org/gnome/shell/extensions/user-theme/: ext-user-theme.ini

@@ -1,0 +1,426 @@
+---
+# Desktop customisation for Debian 12/13 and Ubuntu 22.04+ running GNOME.
+#
+#   ./bootstrap.sh                                   installs Ansible, then applies everything
+#   ansible-playbook -i inventory.ini playbook.yml --ask-become-pass     the same, by hand
+#
+# Run it from a terminal INSIDE the GNOME session of the user being set up: the second
+# play talks to that user's D-Bus session (dconf, flatpak --user, gnome-extensions).
+
+- name: System-level setup (packages, vendor repos, keyd, default terminal)
+  hosts: desktop
+  become: true
+  tags: [system]
+  tasks:
+    - name: Sanity | supported distribution
+      ansible.builtin.assert:
+        that: ansible_distribution in ['Debian', 'Ubuntu']
+        fail_msg: "Only Debian and Ubuntu are supported (this is {{ ansible_distribution }})."
+
+    - name: Packages | refresh apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Packages | find which wanted packages this release ships
+      ansible.builtin.shell: |
+        for p in {{ apt_packages | join(' ') }}; do
+          apt-cache policy "$p" 2>/dev/null | grep -q 'Candidate: [^(]' && echo "$p"
+        done
+        true
+      args:
+        executable: /bin/bash
+      register: apt_available
+      changed_when: false
+      check_mode: false
+
+    - name: Packages | install
+      ansible.builtin.apt:
+        name: "{{ apt_available.stdout_lines }}"
+        state: present
+
+    - name: Packages | note anything this release does not ship
+      ansible.builtin.debug:
+        msg: "Not packaged on {{ ansible_distribution }} {{ ansible_distribution_version }}, skipped: {{ apt_packages | difference(apt_available.stdout_lines) }}"
+      when: apt_packages | difference(apt_available.stdout_lines) | length > 0
+
+    # ---- Visual Studio Code -------------------------------------------------
+    - name: VS Code | Microsoft signing key
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg
+      args:
+        creates: /usr/share/keyrings/microsoft.gpg
+        executable: /bin/bash
+      when: install_vscode
+
+    - name: VS Code | apt source (deb822)
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/vscode.sources
+        mode: "0644"
+        content: |
+          Types: deb
+          URIs: https://packages.microsoft.com/repos/code
+          Suites: stable
+          Components: main
+          Architectures: amd64
+          Signed-By: /usr/share/keyrings/microsoft.gpg
+      when: install_vscode
+      register: vscode_repo
+
+    # ---- Google Chrome ------------------------------------------------------
+    - name: Chrome | Google signing key
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+      args:
+        creates: /usr/share/keyrings/google-chrome.gpg
+        executable: /bin/bash
+      when: install_chrome
+
+    - name: Chrome | apt source (deb822)
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/google-chrome.sources
+        mode: "0644"
+        content: |
+          X-Repolib-Name: Google Chrome
+          Types: deb
+          URIs: https://dl.google.com/linux/chrome-stable/deb/
+          Suites: stable
+          Components: main
+          Architectures: amd64
+          Signed-By: /usr/share/keyrings/google-chrome.gpg
+      when: install_chrome
+      register: chrome_repo
+
+    # ---- Sublime Text -------------------------------------------------------
+    - name: Sublime | signing key
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -fsSL https://download.sublimetext.com/sublimehq-pub.gpg | gpg --dearmor -o /usr/share/keyrings/sublimehq-archive.gpg
+      args:
+        creates: /usr/share/keyrings/sublimehq-archive.gpg
+        executable: /bin/bash
+      when: install_sublime_text
+
+    - name: Sublime | apt source
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/sublime-text.list
+        mode: "0644"
+        content: "deb [signed-by=/usr/share/keyrings/sublimehq-archive.gpg] https://download.sublimetext.com/ apt/stable/\n"
+      when: install_sublime_text
+      register: sublime_repo
+
+    - name: Refresh apt after adding repos
+      ansible.builtin.apt:
+        update_cache: true
+      when: vscode_repo is changed or chrome_repo is changed or sublime_repo is changed
+
+    - name: Vendor packages
+      ansible.builtin.apt:
+        name: "{{ item.pkg }}"
+        state: present
+      loop:
+        - { pkg: code, when: "{{ install_vscode }}" }
+        - { pkg: google-chrome-stable, when: "{{ install_chrome }}" }
+        - { pkg: sublime-text, when: "{{ install_sublime_text }}" }
+      when: item.when | bool
+
+    # ---- Tilix as the system default terminal ---------------------------------
+    - name: Tilix | x-terminal-emulator alternative (Ctrl+Alt+T and "Open in Terminal" on older GNOME)
+      community.general.alternatives:
+        name: x-terminal-emulator
+        path: /usr/bin/tilix.wrapper
+      when: "'tilix' in apt_available.stdout_lines"
+
+    - name: Tilix | is vte.sh available for directory tracking
+      ansible.builtin.stat:
+        path: /etc/profile.d/vte-2.91.sh
+      register: vte_sh
+
+    - name: Tilix | vte.sh hook (Tilix warns without it)
+      ansible.builtin.file:
+        src: /etc/profile.d/vte-2.91.sh
+        dest: /etc/profile.d/vte.sh
+        state: link
+      when: vte_sh.stat.exists
+
+    # ---- keyd: Mac-style modifiers -------------------------------------------
+    - name: keyd | build from source when the release has no package (Ubuntu 22.04)
+      when: "'keyd' not in apt_available.stdout_lines"
+      block:
+        - name: keyd | build dependencies
+          ansible.builtin.apt:
+            name: [build-essential, git]
+            state: present
+
+        - name: keyd | sources
+          ansible.builtin.git:
+            repo: https://github.com/rvaiya/keyd.git
+            dest: /usr/local/src/keyd
+            version: "{{ keyd_source_version }}"
+
+        - name: keyd | make install (binary in /usr/local/bin, unit in /usr/local/lib/systemd)
+          ansible.builtin.shell: make && make install
+          args:
+            chdir: /usr/local/src/keyd
+            creates: /usr/local/bin/keyd
+
+        - name: keyd | systemd sees the new unit
+          ansible.builtin.systemd:
+            daemon_reload: true
+
+    - name: keyd | config directory
+      ansible.builtin.file:
+        path: /etc/keyd
+        state: directory
+        mode: "0755"
+
+    - name: keyd | configuration
+      ansible.builtin.copy:
+        src: files/keyd/default.conf
+        dest: /etc/keyd/default.conf
+        mode: "0644"
+        backup: true
+      notify: reload keyd
+
+    - name: keyd | service enabled and running
+      ansible.builtin.systemd:
+        name: keyd
+        enabled: true
+        state: started
+
+  handlers:
+    - name: reload keyd
+      ansible.builtin.systemd:
+        name: keyd
+        state: restarted
+
+
+- name: User-level setup (themes, extensions, dconf, dotfiles, apps in $HOME)
+  hosts: desktop
+  become: false
+  tags: [user]
+  vars:
+    ext_dir: "{{ desktop_home }}/.local/share/gnome-shell/extensions"
+  tasks:
+    - name: Sanity | must run inside the user's graphical session
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'DBUS_SESSION_BUS_ADDRESS') | length > 0
+        fail_msg: "Run this playbook from a terminal inside the GNOME session of {{ desktop_user }} (dconf/flatpak need the session bus)."
+
+    - name: GNOME | detect the Shell version (extensions.gnome.org serves a matching build)
+      ansible.builtin.shell: |
+        v=$(gnome-shell --version | grep -oE '[0-9]+(\.[0-9]+)?' | head -n1)
+        case "$v" in 3.*) echo "$v" ;; *) echo "${v%%.*}" ;; esac
+      args:
+        executable: /bin/bash
+      register: shell_version_probe
+      changed_when: false
+      check_mode: false
+
+    - name: GNOME | use the detected version unless one is pinned in group_vars
+      ansible.builtin.set_fact:
+        gnome_shell_version: "{{ gnome_shell_version | default('', true) or shell_version_probe.stdout }}"
+
+    - name: Directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - "{{ desktop_home }}/.local/bin"
+        - "{{ desktop_home }}/.local/opt"
+        - "{{ desktop_home }}/.local/share/fonts"
+        - "{{ desktop_home }}/.local/share/icons"
+        - "{{ desktop_home }}/.themes"
+        - "{{ desktop_home }}/.config/tilix/schemes"
+        - "{{ ext_dir }}"
+
+    # ---- dotfiles -------------------------------------------------------------
+    - name: Dotfiles | readline (Option+Backspace / Option+Delete delete words)
+      ansible.builtin.copy:
+        src: files/home/.inputrc
+        dest: "{{ desktop_home }}/.inputrc"
+
+    - name: Dotfiles | starship prompt config
+      ansible.builtin.copy:
+        src: files/home/.config/starship.toml
+        dest: "{{ desktop_home }}/.config/starship.toml"
+
+    - name: Dotfiles | Tilix is the default terminal (xdg-terminal-exec, newer GNOME)
+      ansible.builtin.copy:
+        src: files/home/.config/xdg-terminals.list
+        dest: "{{ desktop_home }}/.config/xdg-terminals.list"
+
+    - name: Dotfiles | Tilix Tokyo Night colour scheme
+      ansible.builtin.copy:
+        src: files/home/.config/tilix/schemes/tokyo-night.json
+        dest: "{{ desktop_home }}/.config/tilix/schemes/tokyo-night.json"
+
+    - name: Dotfiles | bashrc additions
+      ansible.builtin.blockinfile:
+        path: "{{ desktop_home }}/.bashrc"
+        marker: "# {mark} ANSIBLE MANAGED: desktop customisation"
+        create: true
+        mode: "0644"
+        block: |
+          export PATH="$HOME/.local/bin:$PATH"
+
+          # open Sublime in the default folder when run with no arguments
+          subl() { if [ $# -eq 0 ]; then command subl "$HOME/sublime"; else command subl "$@"; fi; }
+
+          # Starship prompt
+          command -v starship >/dev/null && eval "$(starship init bash)"
+
+          # Terminal tab title: `title Name` pins a name on the tab, `title` alone shows the current directory again
+          __set_tab_title() { printf '\033]0;%s\007' "${TAB_TITLE:-${PWD/#$HOME/\~}}"; }
+          title() { if [ $# -gt 0 ]; then TAB_TITLE="$*"; else unset TAB_TITLE; fi; __set_tab_title; }
+          starship_precmd_user_func="__set_tab_title"
+
+    - name: Starship | install to ~/.local/bin
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -sS https://starship.rs/install.sh | sh -s -- -y -b "{{ desktop_home }}/.local/bin"
+      args:
+        creates: "{{ desktop_home }}/.local/bin/starship"
+        executable: /bin/bash
+      when: starship_install
+
+    # ---- fonts --------------------------------------------------------------
+    - name: Fonts | JetBrainsMono Nerd Font directory
+      ansible.builtin.file:
+        path: "{{ desktop_home }}/.local/share/fonts/JetBrainsMonoNerd"
+        state: directory
+
+    - name: Fonts | JetBrainsMono Nerd Font
+      ansible.builtin.unarchive:
+        src: https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip
+        dest: "{{ desktop_home }}/.local/share/fonts/JetBrainsMonoNerd"
+        remote_src: true
+        creates: "{{ desktop_home }}/.local/share/fonts/JetBrainsMonoNerd/JetBrainsMonoNerdFont-Regular.ttf"
+      notify: refresh font cache
+
+    # ---- themes -------------------------------------------------------------
+    - name: Themes | clone WhiteSur GTK/Shell theme
+      ansible.builtin.git:
+        repo: https://github.com/vinceliuice/WhiteSur-gtk-theme.git
+        dest: "{{ desktop_home }}/src/WhiteSur-gtk-theme"
+        depth: 1
+        update: false
+      when: whitesur_theme and not (desktop_home ~ '/.themes/WhiteSur-Dark/gnome-shell') is directory
+
+    - name: Themes | install WhiteSur-Dark into ~/.themes
+      ansible.builtin.command:
+        cmd: ./install.sh -c Dark
+        chdir: "{{ desktop_home }}/src/WhiteSur-gtk-theme"
+        creates: "{{ desktop_home }}/.themes/WhiteSur-Dark/gnome-shell"
+      when: whitesur_theme and not ansible_check_mode and not (desktop_home ~ '/.themes/WhiteSur-Dark/gnome-shell') is directory
+
+    - name: Themes | clone Tela icon theme
+      ansible.builtin.git:
+        repo: https://github.com/vinceliuice/Tela-icon-theme.git
+        dest: "{{ desktop_home }}/src/Tela-icon-theme"
+        depth: 1
+        update: false
+      when: tela_icons and not (desktop_home ~ '/.local/share/icons/Tela-' ~ tela_colors[0] ~ '-dark/index.theme') is file
+
+    - name: Themes | install Tela icons into ~/.local/share/icons
+      ansible.builtin.command:
+        cmd: "./install.sh {{ tela_colors | join(' ') }}"
+        chdir: "{{ desktop_home }}/src/Tela-icon-theme"
+        creates: "{{ desktop_home }}/.local/share/icons/Tela-{{ tela_colors[0] }}-dark/index.theme"
+      when: tela_icons and not ansible_check_mode and not (desktop_home ~ '/.local/share/icons/Tela-' ~ tela_colors[0] ~ '-dark/index.theme') is file
+
+    # ---- flatpak ------------------------------------------------------------
+    - name: Flatpak | Flathub remote (user)
+      community.general.flatpak_remote:
+        name: flathub
+        flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
+        method: user
+        state: present
+
+    - name: Flatpak | user apps
+      community.general.flatpak:
+        name: "{{ flatpak_user_apps }}"
+        method: user
+        remote: flathub
+        state: present
+
+    # ---- Telegram (official tarball, self-updating) --------------------------
+    - name: Telegram | download and unpack to ~/.local/opt/Telegram
+      ansible.builtin.unarchive:
+        src: "https://github.com/telegramdesktop/tdesktop/releases/download/v{{ telegram_version }}/td-setup-linux-x64-{{ telegram_version }}.tar.xz"
+        dest: "{{ desktop_home }}/.local/opt"
+        remote_src: true
+        creates: "{{ desktop_home }}/.local/opt/Telegram/Telegram"
+      # Telegram writes its own launcher (~/.local/share/applications/org.telegram.desktop._*.desktop) on first start.
+
+    # ---- GNOME Shell extensions -----------------------------------------------
+    - name: Extensions | download the build for GNOME {{ gnome_shell_version }} from extensions.gnome.org
+      ansible.builtin.get_url:
+        url: "https://extensions.gnome.org/download-extension/{{ item }}.shell-extension.zip?shell_version={{ gnome_shell_version }}"
+        dest: "/tmp/{{ item }}.zip"
+        mode: "0644"
+      loop: "{{ gnome_extensions }}"
+      when: not (ext_dir ~ '/' ~ item ~ '/metadata.json') is file
+      register: ext_zip
+      failed_when: false
+
+    - name: Extensions | note any with no build for this GNOME version
+      ansible.builtin.debug:
+        msg: "extensions.gnome.org has no build of {{ item.item }} for GNOME {{ gnome_shell_version }}; skipped."
+      loop: "{{ ext_zip.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item is not skipped and (item.status_code | default(200)) != 200
+
+    - name: Extensions | install (they load after the next login)
+      ansible.builtin.command:
+        cmd: "gnome-extensions install --force /tmp/{{ item }}.zip"
+        creates: "{{ ext_dir }}/{{ item }}/metadata.json"
+      loop: "{{ gnome_extensions }}"
+      when: ('/tmp/' ~ item ~ '.zip') is file
+
+    - name: Extensions | enabled list
+      ansible.builtin.shell: |
+        set -o pipefail
+        want="['{{ (gnome_extensions_enabled + (gnome_extensions_enabled_extra[ansible_distribution] | default([]))) | join("', '") }}']"
+        if [ "$(dconf read /org/gnome/shell/enabled-extensions)" != "$want" ]; then
+          dconf write /org/gnome/shell/enabled-extensions "$want" && echo CHANGED
+        fi
+      args:
+        executable: /bin/bash
+      register: ext_enable
+      changed_when: "'CHANGED' in ext_enable.stdout"
+      # Freshly installed extensions only load after the next login; enabling them now is harmless.
+
+    # ---- dconf: GNOME, terminal, extension settings ----------------------------
+    - name: dconf | load settings (only when a key in the file differs; runtime keys apps add are ignored)
+      ansible.builtin.shell: |
+        set -o pipefail
+        python3 - "{{ item.key }}" "{{ playbook_dir }}/files/dconf/{{ item.value }}" <<'PY'
+        import configparser, subprocess, sys
+        path, file = sys.argv[1], sys.argv[2]
+        def parse(text):
+            c = configparser.ConfigParser(interpolation=None); c.optionxform = str; c.read_string(text); return c
+        want = parse(open(file).read())
+        live = parse(subprocess.run(["dconf", "dump", path], capture_output=True, text=True).stdout)
+        differs = any(not live.has_option(s, k) or live.get(s, k) != v
+                      for s in want.sections() for k, v in want.items(s))
+        if differs:
+            subprocess.run(["dconf", "load", path], input=open(file).read(), text=True, check=True)
+            print("CHANGED")
+        PY
+      args:
+        executable: /bin/bash
+      loop: "{{ dconf_loads | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      register: dconf_load
+      changed_when: "'CHANGED' in dconf_load.stdout"
+
+  handlers:
+    - name: refresh font cache
+      ansible.builtin.command: fc-cache -f
+      changed_when: false
