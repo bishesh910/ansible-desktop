@@ -38,8 +38,8 @@ new GNOME extensions load, then run it once more so their settings apply.
 | Tilix (default) + GNOME Terminal | Mac-style shortcuts (Cmd+T/N/F/G/comma, Ctrl+Tab / Ctrl+Shift+Tab for tabs, Cmd+1-9, Cmd+C/V, Cmd+Shift+W close tab, Cmd+Shift+R rename tab), dark, JetBrainsMono Nerd Font 11, Tokyo Night. Tilix keeps a renamed tab's name even when a remote SSH prompt sends its own title |
 | Shell | readline word-delete on Option+Backspace/Delete, Starship prompt + config, `title NAME` to name a tab, `subl` helper, `~/.local/bin` on PATH |
 | Apps | VS Code (Microsoft repo), Google Chrome, Sublime Text, Bitwarden (Flathub, user install), Telegram Desktop (official tarball in `~/.local/opt/Telegram`, self-updating), claude-desktop, tmux, htop, remmina |
-| Remote access | Tailscale (`tailscaled` running), Teleport `tsh` client, NetBird service + tray UI, each from its vendor apt repo with the signing key shipped in `files/apt-keyrings/`. Log in to each once afterwards (`sudo tailscale up`, `tsh login`, the NetBird tray) |
-| Autostart | NetBird tray, Remmina applet, Bitwarden |
+| Remote access | Teleport `tsh` client from its vendor apt repo (signing key in `files/apt-keyrings/`); `tsh login` once afterwards. Tailscale and NetBird are wired up the same way but switched off (`install_tailscale`, `install_netbird` in `group_vars/all.yml`) |
+| Autostart | Remmina applet, Bitwarden (NetBird tray only when NetBird is enabled) |
 | Dock | favourites: Files, Firefox, Chrome, Tilix, claude-desktop, Telegram |
 
 Not included on purpose: the JumpCloud agent (enrolment-specific) and the Dash2Dock Animated extension,
@@ -79,7 +79,7 @@ Cmd+Shift+R rename tab, Ctrl+Tab / Ctrl+Shift+Tab next / previous tab, Cmd+comma
 1. Log out and back in: GNOME only loads freshly installed extensions at login.
 2. Run `./bootstrap.sh` once more so the extension settings (dock, Search Light…) are applied to schemas that
    now exist.
-3. Log in to the things that need an account: `sudo tailscale up`, `tsh login`, the NetBird tray icon, Bitwarden.
+3. Log in to the things that need an account: `tsh login`, Bitwarden.
 4. Press Super+Space. If nothing appears, see below.
 
 ## Troubleshooting

@@ -78,10 +78,12 @@
         executable: /bin/bash
       when: install_chrome
 
+    # Chrome's postinst rewrites this file (adds a header), so create it once and never overwrite it.
     - name: Chrome | apt source (deb822)
       ansible.builtin.copy:
         dest: /etc/apt/sources.list.d/google-chrome.sources
         mode: "0644"
+        force: false
         content: |
           X-Repolib-Name: Google Chrome
           Types: deb
@@ -146,10 +148,24 @@
       when: item.enabled | bool
       register: vendor_repos
 
+    - name: Vendor repos | drop apt sources that are switched off
+      ansible.builtin.file:
+        path: "/etc/apt/sources.list.d/{{ item.name }}.list"
+        state: absent
+      loop:
+        - { name: tailscale, enabled: "{{ install_tailscale }}" }
+        - { name: teleport, enabled: "{{ install_teleport }}" }
+        - { name: netbird, enabled: "{{ install_netbird }}" }
+        - { name: claude-desktop, enabled: "{{ install_claude_desktop }}" }
+      loop_control:
+        label: "{{ item.name }}"
+      when: not (item.enabled | bool)
+      register: vendor_repos_removed
+
     - name: Refresh apt after adding repos
       ansible.builtin.apt:
         update_cache: true
-      when: vscode_repo is changed or chrome_repo is changed or sublime_repo is changed or vendor_repos is changed
+      when: vscode_repo is changed or chrome_repo is changed or sublime_repo is changed or vendor_repos is changed or vendor_repos_removed is changed
 
     - name: Vendor packages
       ansible.builtin.apt:
@@ -312,10 +328,25 @@
         src: files/home/.config/tilix/schemes/tokyo-night.json
         dest: "{{ desktop_home }}/.config/tilix/schemes/tokyo-night.json"
 
-    - name: Dotfiles | autostart entries (NetBird tray, Remmina applet, Bitwarden)
+    # force: false — apps (Bitwarden via the autostart portal) rewrite their own entry; seed it, don't fight it.
+    - name: Dotfiles | autostart entries (Remmina applet, Bitwarden; NetBird tray when enabled)
       ansible.builtin.copy:
-        src: files/home/.config/autostart/
-        dest: "{{ desktop_home }}/.config/autostart/"
+        src: "files/home/.config/autostart/{{ item.file }}"
+        dest: "{{ desktop_home }}/.config/autostart/{{ item.file }}"
+        force: false
+      loop:
+        - { file: remmina-applet.desktop, enabled: true }
+        - { file: com.bitwarden.desktop.desktop, enabled: true }
+        - { file: netbird.desktop, enabled: "{{ install_netbird }}" }
+      loop_control:
+        label: "{{ item.file }}"
+      when: item.enabled | bool
+
+    - name: Dotfiles | no NetBird autostart when it is switched off
+      ansible.builtin.file:
+        path: "{{ desktop_home }}/.config/autostart/netbird.desktop"
+        state: absent
+      when: not (install_netbird | bool)
 
     - name: Dotfiles | bashrc additions
       ansible.builtin.blockinfile:

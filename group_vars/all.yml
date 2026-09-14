@@ -40,11 +40,12 @@ install_chrome: true
 install_sublime_text: true
 
 # VPN / remote-access tooling and the desktop chat app, each from its vendor apt repo
-# (signing keys are shipped in files/apt-keyrings). Turn off what you do not want.
-install_tailscale: true             # tailscaled enabled; run `sudo tailscale up` once to log in
+# (signing keys are shipped in files/apt-keyrings). Turn off what you do not want; a repo that is
+# turned off is removed from /etc/apt/sources.list.d, its package is left alone (apt purge it by hand).
+install_tailscale: false            # tailscaled enabled; run `sudo tailscale up` once to log in
 install_teleport: true              # tsh client only; the teleport service is left disabled
 teleport_channel: stable/v18
-install_netbird: true               # netbird service + tray UI (autostart entry in files/home)
+install_netbird: false              # netbird service + tray UI + autostart entry
 install_claude_desktop: true
 # The JumpCloud agent (jcagent) is enrolment-specific and deliberately not managed here.
 
