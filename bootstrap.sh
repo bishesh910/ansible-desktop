@@ -16,8 +16,24 @@ if ! ansible-galaxy collection list 2>/dev/null | grep -q '^community\.general';
   ansible-galaxy collection install -r requirements.yml
 fi
 
+# Ubuntu 25.10+ selects sudo-rs as the default sudo. It does not reproduce the custom
+# prompt Ansible passes with -p, so --ask-become-pass hangs and the run dies with
+# "Timed out waiting for become success or become password prompt". Classic sudo stays
+# installed next to it as /usr/bin/sudo.ws, so point Ansible at that instead.
+become_args=()
+if sudo --version 2>/dev/null | grep -qi '^sudo-rs'; then
+  if [ -x /usr/bin/sudo.ws ]; then
+    echo ">> sudo is sudo-rs, which Ansible cannot prompt through; using /usr/bin/sudo.ws"
+    become_args=(-e ansible_become_exe=/usr/bin/sudo.ws)
+  else
+    echo ">> sudo is sudo-rs and classic sudo is missing; installing it"
+    sudo apt-get install -y sudo
+    become_args=(-e ansible_become_exe=/usr/bin/sudo.ws)
+  fi
+fi
+
 echo ">> Applying the playbook (your sudo password is asked once)"
-ansible-playbook -i inventory.ini playbook.yml --ask-become-pass "$@"
+ansible-playbook -i inventory.ini playbook.yml --ask-become-pass "${become_args[@]}" "$@"
 
 cat <<'MSG'
 

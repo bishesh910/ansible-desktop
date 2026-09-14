@@ -367,14 +367,39 @@
         dest: "{{ desktop_home }}/src/WhiteSur-gtk-theme"
         depth: 1
         update: false
-      when: whitesur_theme and not (desktop_home ~ '/.themes/WhiteSur-Dark/gnome-shell') is directory
+      when: whitesur_theme and not (desktop_home ~ '/.themes/WhiteSur-Dark-purple/gnome-shell') is directory
 
-    - name: Themes | install WhiteSur-Dark into ~/.themes
+    # TERM must be set: install.sh calls setterm for its progress animation and aborts without it.
+    - name: Themes | install WhiteSur-Dark-purple into ~/.themes
       ansible.builtin.command:
-        cmd: ./install.sh -c Dark
+        cmd: ./install.sh -c Dark -t purple
         chdir: "{{ desktop_home }}/src/WhiteSur-gtk-theme"
-        creates: "{{ desktop_home }}/.themes/WhiteSur-Dark/gnome-shell"
-      when: whitesur_theme and not ansible_check_mode and not (desktop_home ~ '/.themes/WhiteSur-Dark/gnome-shell') is directory
+        creates: "{{ desktop_home }}/.themes/WhiteSur-Dark-purple/gnome-shell"
+      environment: { TERM: xterm }
+      when: whitesur_theme and not ansible_check_mode and not (desktop_home ~ '/.themes/WhiteSur-Dark-purple/gnome-shell') is directory
+
+    - name: Themes | WhiteSur for libadwaita (GTK4) apps via ~/.config/gtk-4.0
+      ansible.builtin.command:
+        cmd: ./install.sh -c Dark -t purple -l
+        chdir: "{{ desktop_home }}/src/WhiteSur-gtk-theme"
+        creates: "{{ desktop_home }}/.config/gtk-4.0/gtk-Dark.css"
+      environment: { TERM: xterm }
+      when: whitesur_theme and not ansible_check_mode and not (desktop_home ~ '/.config/gtk-4.0/gtk-Dark.css') is file
+
+    - name: Themes | clone WhiteSur cursors
+      ansible.builtin.git:
+        repo: https://github.com/vinceliuice/WhiteSur-cursors.git
+        dest: "{{ desktop_home }}/src/WhiteSur-cursors"
+        depth: 1
+        update: false
+      when: whitesur_theme and not (desktop_home ~ '/.local/share/icons/WhiteSur-cursors/index.theme') is file
+
+    - name: Themes | install WhiteSur cursors into ~/.local/share/icons
+      ansible.builtin.command:
+        cmd: ./install.sh
+        chdir: "{{ desktop_home }}/src/WhiteSur-cursors"
+        creates: "{{ desktop_home }}/.local/share/icons/WhiteSur-cursors/index.theme"
+      when: whitesur_theme and not ansible_check_mode and not (desktop_home ~ '/.local/share/icons/WhiteSur-cursors/index.theme') is file
 
     - name: Themes | clone Tela icon theme
       ansible.builtin.git:
@@ -440,6 +465,35 @@
         creates: "{{ ext_dir }}/{{ item }}/metadata.json"
       loop: "{{ gnome_extensions }}"
       when: ('/tmp/' ~ item ~ '.zip') is file
+
+    # Search Light: GitHub build + patch (see search_light_* in group_vars). Rebuilt only when the
+    # result differs from what is installed; loads after the next login like the others.
+    - name: Extensions | clone Search Light at the pinned commit
+      ansible.builtin.git:
+        repo: "{{ search_light_repo }}"
+        dest: "{{ desktop_home }}/src/search-light"
+        version: "{{ search_light_commit }}"
+        force: true
+
+    - name: Extensions | build Search Light with the crash fix and install it
+      ansible.builtin.shell: |
+        set -o pipefail
+        src="{{ desktop_home }}/src/search-light"
+        dest="{{ ext_dir }}/search-light@icedman.github.com"
+        build="$(mktemp -d)"
+        trap 'rm -rf "$build"' EXIT
+        cp -R "$src"/. "$build"/ && rm -rf "$build/.git"
+        for p in "{{ playbook_dir }}"/files/search-light/*.patch; do
+          patch -p1 -s -d "$build" < "$p"
+        done
+        glib-compile-schemas --strict --targetdir="$build/schemas/" "$build/schemas"
+        if ! diff -rq "$build" "$dest" > /dev/null 2>&1; then
+          rm -rf "$dest" && mkdir -p "$dest" && cp -R "$build"/. "$dest"/ && echo INSTALLED
+        fi
+      args:
+        executable: /bin/bash
+      register: search_light_build
+      changed_when: "'INSTALLED' in search_light_build.stdout"
 
     - name: Extensions | enabled list
       ansible.builtin.shell: |

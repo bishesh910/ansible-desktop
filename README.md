@@ -24,8 +24,8 @@ new GNOME extensions load, then run it once more so their settings apply.
 | Area | What |
 |---|---|
 | keyd | Mac-style modifiers on a PC keyboard: Alt key = Cmd (acts as Ctrl, Cmd+Q = close window, Cmd+Space = Search Light, Cmd+Tab = app switcher…), Windows key = Option (hold-Shift + Mac symbols + word navigation), Ctrl+Cmd+Q = lock screen. `files/keyd/default.conf`. Built from source where the distro has no package |
-| GNOME | `us+mac` keyboard layout, dark mode, purple accent, Tela-purple-dark icons, WhiteSur-Dark shell theme, window buttons (close/min/max), touchpad speed, idle/lock delays, Ctrl+Shift+S screenshot, Ctrl+Shift+B opens Chrome |
-| Extensions | Dash to Dock (bottom, always visible, dots, no Apps button), Search Light (Super+Space), Clipboard Indicator, Caffeine, User Themes, AppIndicator. The right build for the running GNOME version is fetched from extensions.gnome.org |
+| GNOME | `us+mac` keyboard layout, dark mode, purple accent, Tela-purple-dark icons, WhiteSur-Dark-purple GTK + shell theme (also for libadwaita apps via `~/.config/gtk-4.0`), WhiteSur cursors, window buttons (close/min/max), touchpad speed, idle/lock delays, Ctrl+Shift+S screenshot, Ctrl+Shift+B opens Chrome |
+| Extensions | Dash to Dock (bottom, always visible, dots, no Apps button), Search Light (Super+Space, Spotlight-style: blurred, rounded, no panel icon), Clipboard Indicator, Caffeine, User Themes, AppIndicator, plus the Extension Manager app. The right build for the running GNOME version is fetched from extensions.gnome.org, except Search Light, which is built from a pinned GitHub commit with `files/search-light/pr164-hide-reentrancy.patch` (the extensions.gnome.org build stops at GNOME 49 and the unpatched GitHub one aborts GNOME Shell after login). IBus is told not to grab Super+Space. Do not click Install/Update on Search Light in Extension Manager: it reinstalls the old build |
 | Tilix (default) + GNOME Terminal | Mac-style shortcuts (Cmd+T/N/F/G/comma, Ctrl+Tab / Ctrl+Shift+Tab for tabs, Cmd+1-9, Cmd+C/V, Cmd+Shift+W close tab, Cmd+Shift+R rename tab), dark, JetBrainsMono Nerd Font 11, Tokyo Night. Tilix keeps a renamed tab's name even when a remote SSH prompt sends its own title |
 | Shell | readline word-delete on Option+Backspace/Delete, Starship prompt + config, `title NAME` to name a tab, `subl` helper, `~/.local/bin` on PATH |
 | Apps | VS Code (Microsoft repo), Google Chrome, Sublime Text, Bitwarden (Flathub, user install), Telegram Desktop (official tarball in `~/.local/opt/Telegram`, self-updating), claude-desktop, tmux, htop, remmina |
@@ -46,12 +46,17 @@ The same playbook runs on both. Differences it handles by itself:
 
 - Packages a release does not ship are skipped with a note (for example `xdg-terminal-exec` on older Ubuntu).
 - `keyd` is installed from apt where packaged (Debian 13, Ubuntu 24.04+) and built from source otherwise (Ubuntu 22.04).
-- GNOME Shell extensions are downloaded for the detected Shell version (48, 46, 42…).
+- GNOME Shell extensions are downloaded for the detected Shell version (50, 48, 46, 42…); Search Light always comes from GitHub.
 - The default terminal is set both the new way (`~/.config/xdg-terminals.list`) and the old way
   (`x-terminal-emulator` alternative + `org.gnome.desktop.default-applications.terminal`), so Ctrl+Alt+T and
   "Open in Terminal" pick Tilix on either.
 - On Ubuntu, the stock dock is replaced by Dash to Dock (same settings), while Ubuntu's desktop icons and tiling
   assistant stay enabled.
+- Ubuntu 25.10+ makes `sudo-rs` the default `sudo`. It rewrites the password prompt Ansible passes with `-p`, so
+  `--ask-become-pass` never matches it and the run fails with *"Timed out waiting for become success or become
+  password prompt"*. `bootstrap.sh` detects this and points Ansible at classic sudo (`/usr/bin/sudo.ws`), which
+  Debian and older Ubuntu use anyway. Running `ansible-playbook` by hand on such a release needs the same flag:
+  `-e ansible_become_exe=/usr/bin/sudo.ws`.
 
 ## Layout
 
