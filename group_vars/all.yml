@@ -82,6 +82,14 @@ gnome_extensions_enabled_extra:
   Ubuntu:
     - ding@rastersoft.com
     - tiling-assistant@ubuntu.com
+# Extensions the session mode force-loads even when they are NOT in enabled-extensions
+# (/usr/share/gnome-shell/modes/ubuntu.json). The only way to keep them off is the
+# disabled-extensions key. Ubuntu Dock is a fork of Dash to Dock; loading both makes the second
+# one throw "DockManager.getDefault() is null" inside the overview, which then renders empty
+# (no apps in the launcher, no search results). Merged into disabled-extensions, never overwritten.
+gnome_extensions_disabled_extra:
+  Ubuntu:
+    - ubuntu-dock@ubuntu.com
 # NEVER add dash2dock-lite@icedman.github.com: it crashed GNOME Shell whenever an app quit.
 
 # Themes (built from upstream git, installed into the user's home)

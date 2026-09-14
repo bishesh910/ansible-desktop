@@ -539,6 +539,28 @@
       changed_when: "'CHANGED' in ext_enable.stdout"
       # Freshly installed extensions only load after the next login; enabling them now is harmless.
 
+    # Session-mode extensions (ubuntu.json) load regardless of the list above, so the ones we
+    # replace must be pinned in disabled-extensions or they run alongside their replacement.
+    - name: Extensions | disabled list (session-mode extensions we replace, merged with existing)
+      ansible.builtin.shell: |
+        set -o pipefail
+        python3 - {{ (gnome_extensions_disabled_extra[ansible_distribution] | default([])) | join(' ') }} <<'PY'
+        import ast, subprocess, sys
+        want = sys.argv[1:]
+        raw = subprocess.run(["dconf", "read", "/org/gnome/shell/disabled-extensions"],
+                             capture_output=True, text=True).stdout.strip()
+        live = ast.literal_eval(raw) if raw.startswith("[") else []
+        missing = [u for u in want if u not in live]
+        if missing:
+            subprocess.run(["dconf", "write", "/org/gnome/shell/disabled-extensions", repr(live + missing)], check=True)
+            print("CHANGED")
+        PY
+      args:
+        executable: /bin/bash
+      register: ext_disable
+      changed_when: "'CHANGED' in ext_disable.stdout"
+      when: gnome_extensions_disabled_extra[ansible_distribution] | default([]) | length > 0
+
     # ---- dconf: GNOME, terminal, extension settings ----------------------------
     - name: dconf | load settings (only when a key in the file differs; runtime keys apps add are ignored)
       ansible.builtin.shell: |

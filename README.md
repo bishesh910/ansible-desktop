@@ -99,6 +99,14 @@ Cmd+Shift+R rename tab, Ctrl+Tab / Ctrl+Shift+Tab next / previous tab, Cmd+comma
   switches to virtual terminal 4. Ctrl+Alt+F2 (or F1) brings the GNOME session back; the current config maps
   Ctrl+Cmd+Q to lock instead.
 - **Ansible hangs on the sudo prompt (Ubuntu 25.10+).** See the sudo-rs note under *Debian vs Ubuntu*.
+- **The Activities overview / app launcher is empty (no app grid, search finds nothing) on Ubuntu.** Both docks
+  are running: Ubuntu's session mode (`/usr/share/gnome-shell/modes/ubuntu.json`) force-loads Ubuntu Dock no
+  matter what `enabled-extensions` says, and Ubuntu Dock is a fork of Dash to Dock, so the second one to load
+  throws `DockManager.getDefault() is null` inside the overview and it never lays out. The journal shows it:
+  `journalctl -b _COMM=gnome-shell | grep DockManager`. The playbook now pins `ubuntu-dock@ubuntu.com` into
+  `disabled-extensions` (`gnome_extensions_disabled_extra`); re-run `./bootstrap.sh --tags user` and log out
+  and in. The running shell cannot recover without a new login: once the dock code has half-initialised,
+  re-enabling it fails with "DashToDock has been already initialized".
 
 ## Updating pieces
 
@@ -121,7 +129,8 @@ The same playbook runs on both. Differences it handles by itself:
   (`x-terminal-emulator` alternative + `org.gnome.desktop.default-applications.terminal`), so Ctrl+Alt+T and
   "Open in Terminal" pick Tilix on either.
 - On Ubuntu, the stock dock is replaced by Dash to Dock (same settings), while Ubuntu's desktop icons and tiling
-  assistant stay enabled.
+  assistant stay enabled. Ubuntu Dock is pinned into `disabled-extensions` because the Ubuntu session mode
+  force-loads it otherwise (see *Troubleshooting*).
 - Ubuntu 25.10+ makes `sudo-rs` the default `sudo`. It rewrites the password prompt Ansible passes with `-p`, so
   `--ask-become-pass` never matches it and the run fails with *"Timed out waiting for become success or become
   password prompt"*. `bootstrap.sh` detects this and points Ansible at classic sudo (`/usr/bin/sudo.ws`), which
