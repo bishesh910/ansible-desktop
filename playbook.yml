@@ -111,10 +111,45 @@
       when: install_sublime_text
       register: sublime_repo
 
+    # ---- Tailscale, Teleport, NetBird, claude-desktop (vendor apt repos, keys shipped in files/apt-keyrings) ----
+    - name: Vendor repos | signing keys
+      ansible.builtin.copy:
+        src: "files/apt-keyrings/{{ item }}"
+        dest: "/usr/share/keyrings/{{ item }}"
+        mode: "0644"
+      loop:
+        - tailscale-archive-keyring.gpg
+        - teleport-archive-keyring.asc
+        - netbird-archive-keyring.gpg
+        - claude-desktop-archive-keyring.asc
+
+    - name: Vendor repos | apt sources (suite follows the running distro and codename)
+      ansible.builtin.copy:
+        dest: "/etc/apt/sources.list.d/{{ item.name }}.list"
+        mode: "0644"
+        content: "{{ item.line }}\n"
+      loop:
+        - name: tailscale
+          line: "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} main"
+          enabled: "{{ install_tailscale }}"
+        - name: teleport
+          line: "deb [signed-by=/usr/share/keyrings/teleport-archive-keyring.asc] https://apt.releases.teleport.dev/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} {{ teleport_channel }}"
+          enabled: "{{ install_teleport }}"
+        - name: netbird
+          line: "deb [signed-by=/usr/share/keyrings/netbird-archive-keyring.gpg] https://pkgs.netbird.io/debian stable main"
+          enabled: "{{ install_netbird }}"
+        - name: claude-desktop
+          line: "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main"
+          enabled: "{{ install_claude_desktop }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: item.enabled | bool
+      register: vendor_repos
+
     - name: Refresh apt after adding repos
       ansible.builtin.apt:
         update_cache: true
-      when: vscode_repo is changed or chrome_repo is changed or sublime_repo is changed
+      when: vscode_repo is changed or chrome_repo is changed or sublime_repo is changed or vendor_repos is changed
 
     - name: Vendor packages
       ansible.builtin.apt:
@@ -124,7 +159,25 @@
         - { pkg: code, when: "{{ install_vscode }}" }
         - { pkg: google-chrome-stable, when: "{{ install_chrome }}" }
         - { pkg: sublime-text, when: "{{ install_sublime_text }}" }
+        - { pkg: tailscale, when: "{{ install_tailscale }}" }
+        - { pkg: teleport, when: "{{ install_teleport }}" }
+        - { pkg: netbird, when: "{{ install_netbird }}" }
+        - { pkg: netbird-ui, when: "{{ install_netbird }}" }
+        - { pkg: claude-desktop, when: "{{ install_claude_desktop }}" }
       when: item.when | bool
+
+    - name: VPN services | enabled and running (log in to each with its own CLI/app afterwards)
+      ansible.builtin.systemd:
+        name: "{{ item.unit }}"
+        enabled: true
+        state: started
+      loop:
+        - { unit: tailscaled, when: "{{ install_tailscale }}" }
+        - { unit: netbird, when: "{{ install_netbird }}" }
+      loop_control:
+        label: "{{ item.unit }}"
+      when: item.when | bool
+      # teleport's server unit is intentionally left alone: only the tsh client is used here.
 
     # ---- Tilix as the system default terminal ---------------------------------
     - name: Tilix | x-terminal-emulator alternative (Ctrl+Alt+T and "Open in Terminal" on older GNOME)
@@ -235,6 +288,7 @@
         - "{{ desktop_home }}/.local/share/icons"
         - "{{ desktop_home }}/.themes"
         - "{{ desktop_home }}/.config/tilix/schemes"
+        - "{{ desktop_home }}/.config/autostart"
         - "{{ ext_dir }}"
 
     # ---- dotfiles -------------------------------------------------------------
@@ -257,6 +311,11 @@
       ansible.builtin.copy:
         src: files/home/.config/tilix/schemes/tokyo-night.json
         dest: "{{ desktop_home }}/.config/tilix/schemes/tokyo-night.json"
+
+    - name: Dotfiles | autostart entries (NetBird tray, Remmina applet, Bitwarden)
+      ansible.builtin.copy:
+        src: files/home/.config/autostart/
+        dest: "{{ desktop_home }}/.config/autostart/"
 
     - name: Dotfiles | bashrc additions
       ansible.builtin.blockinfile:

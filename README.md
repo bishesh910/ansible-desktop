@@ -28,10 +28,17 @@ new GNOME extensions load, then run it once more so their settings apply.
 | Extensions | Dash to Dock (bottom, always visible, dots, no Apps button), Search Light (Super+Space), Clipboard Indicator, Caffeine, User Themes, AppIndicator. The right build for the running GNOME version is fetched from extensions.gnome.org |
 | Tilix (default) + GNOME Terminal | Mac-style shortcuts (Cmd+T/N/F/G/comma, Ctrl+Tab / Ctrl+Shift+Tab for tabs, Cmd+1-9, Cmd+C/V, Cmd+Shift+W close tab, Cmd+Shift+R rename tab), dark, JetBrainsMono Nerd Font 11, Tokyo Night. Tilix keeps a renamed tab's name even when a remote SSH prompt sends its own title |
 | Shell | readline word-delete on Option+Backspace/Delete, Starship prompt + config, `title NAME` to name a tab, `subl` helper, `~/.local/bin` on PATH |
-| Apps | VS Code (Microsoft repo), Google Chrome, Sublime Text, Bitwarden (Flathub, user install), Telegram Desktop (official tarball in `~/.local/opt/Telegram`, self-updating), tmux, htop, remmina |
+| Apps | VS Code (Microsoft repo), Google Chrome, Sublime Text, Bitwarden (Flathub, user install), Telegram Desktop (official tarball in `~/.local/opt/Telegram`, self-updating), claude-desktop, tmux, htop, remmina |
+| Remote access | Tailscale (`tailscaled` running), Teleport `tsh` client, NetBird service + tray UI, each from its vendor apt repo with the signing key shipped in `files/apt-keyrings/`. Log in to each once afterwards (`sudo tailscale up`, `tsh login`, the NetBird tray) |
+| Autostart | NetBird tray, Remmina applet, Bitwarden |
+| Dock | favourites: Files, Firefox, Chrome, Tilix, claude-desktop, Telegram |
 
-Not included on purpose: JumpCloud agent, NetBird, Tailscale, Teleport and similar work tooling (each
-with their own repos), and the Dash2Dock Animated extension, which crashed GNOME Shell whenever an app quit.
+Not included on purpose: the JumpCloud agent (enrolment-specific) and the Dash2Dock Animated extension,
+which crashed GNOME Shell whenever an app quit.
+
+Two favourites are Debian-specific: `firefox-esr.desktop` (Ubuntu's Firefox is a snap with a different id) and the
+Telegram launcher id, which Telegram derives from its install path (`~/.local/opt/Telegram`), so it matches only
+when the user name is the same. Fix the list in `files/dconf/shell.ini` if the dock shows a gap.
 
 ## Debian vs Ubuntu
 

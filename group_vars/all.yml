@@ -36,9 +36,14 @@ install_vscode: true
 install_chrome: true
 install_sublime_text: true
 
-# Corporate/VPN tooling that was also on the machine but is not "customisation".
-# Set to true only if you want them; each needs its own vendor repo which you must add yourself.
-# jcagent, netbird, netbird-ui, tailscale, teleport
+# VPN / remote-access tooling and the desktop chat app, each from its vendor apt repo
+# (signing keys are shipped in files/apt-keyrings). Turn off what you do not want.
+install_tailscale: true             # tailscaled enabled; run `sudo tailscale up` once to log in
+install_teleport: true              # tsh client only; the teleport service is left disabled
+teleport_channel: stable/v18
+install_netbird: true               # netbird service + tray UI (autostart entry in files/home)
+install_claude_desktop: true
+# The JumpCloud agent (jcagent) is enrolment-specific and deliberately not managed here.
 
 flatpak_user_apps:
   - com.bitwarden.desktop
@@ -86,6 +91,7 @@ dconf_loads:
   /org/gnome/settings-daemon/plugins/media-keys/: media-keys.ini
   /org/gnome/settings-daemon/plugins/color/: color.ini
   /org/gnome/shell/keybindings/: shell-keybindings.ini
+  /org/gnome/shell/: shell.ini                                   # dock favourites only
   /org/gnome/terminal/legacy/: terminal.ini
   /com/gexperts/Tilix/: tilix.ini
   /org/gnome/shell/extensions/dash-to-dock/: ext-dash-to-dock.ini
